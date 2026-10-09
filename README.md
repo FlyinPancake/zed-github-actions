@@ -13,6 +13,8 @@ To develop this extension, see the [Developing Extensions](https://zed.dev/docs/
 - Tree-sitter: [zed-industries/tree-sitter-yaml](https://github.com/zed-industries/tree-sitter-yaml)
 - Language Server: [actions/languageservices](https://github.com/actions/languageservices), installed from the [`@actions/languageserver`](https://www.npmjs.com/package/@actions/languageserver) NPM package
 
+> [!NOTE]
+> The language server reads local reusable workflows (`uses: ./...` and `uses: $/...`) by sending the editor a custom `actions/readFile` request, which Zed doesn't support. The extension starts the server through a small Node script ([`src/proxy.mjs`](src/proxy.mjs)) that answers this request from disk and passes every other message through unchanged.
 
 ## Configuring
 ### Filetype settings
