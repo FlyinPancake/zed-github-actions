@@ -55,6 +55,38 @@ impl GitHubActionsExtension {
 		Ok(())
 	}
 
+	/// Finds a GitHub token in `GITHUB_TOKEN`, `GH_TOKEN`, or `gh auth token`, unless
+	/// the user already set `sessionToken` in their settings.
+	fn session_token(id: &LanguageServerId, worktree: &Worktree) -> Option<String> {
+		let user_token = settings::LspSettings::for_worktree(id.as_ref(), worktree)
+			.ok()
+			.and_then(|settings| settings.initialization_options)
+			.and_then(|options| options.get("sessionToken")?.as_str().map(str::to_owned));
+		if user_token.is_some_and(|token| !token.is_empty()) {
+			return None;
+		}
+
+		let env = worktree.shell_env();
+		let env_token = ["GITHUB_TOKEN", "GH_TOKEN"].iter().find_map(|name| {
+			env.iter()
+				.find(|(key, value)| key == name && !value.is_empty())
+				.map(|(_, value)| value.clone())
+		});
+		if env_token.is_some() {
+			return env_token;
+		}
+
+		// Pass the shell environment so `gh` is found on the user's `PATH` and reads
+		// its config from the usual place.
+		let output = process::Command::new("gh")
+			.args(["auth", "token"])
+			.envs(env)
+			.output()
+			.ok()?;
+		let token = String::from_utf8(output.stdout).ok()?.trim().to_string();
+		(output.status == Some(0) && !token.is_empty()).then_some(token)
+	}
+
 	/// Builds the `RepositoryContext` the server needs to look up action inputs,
 	/// runner labels, etc. Returns `None` if the origin isn't a GitHub repository.
 	fn repo_context(worktree: &Worktree) -> Option<serde_json::Value> {
@@ -166,13 +198,13 @@ impl Extension for GitHubActionsExtension {
 
 	fn language_server_initialization_options(
 		&mut self,
-		_language_server_id: &LanguageServerId,
+		language_server_id: &LanguageServerId,
 		worktree: &Worktree,
 	) -> Result<Option<serde_json::Value>> {
 		// Zed merges `lsp.gh-actions-language-server.initialization_options` from the
 		// user's settings over these, so any key set there takes precedence.
 		let mut options = serde_json::json!({
-			"sessionToken": ""
+			"sessionToken": Self::session_token(language_server_id, worktree).unwrap_or_default()
 		});
 		if let Some(repo) = Self::repo_context(worktree) {
 			options["repos"] = serde_json::json!([repo]);
