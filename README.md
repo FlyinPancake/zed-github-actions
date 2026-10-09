@@ -11,6 +11,7 @@ GitHub Actions LSP support for Zed. As this repository uses code based on some o
 To develop this extension, see the [Developing Extensions](https://zed.dev/docs/extensions/developing-extensions) section of the Zed docs.
 
 - Tree-sitter: [zed-industries/tree-sitter-yaml](https://github.com/zed-industries/tree-sitter-yaml)
+- Tree-sitter (expressions): [FlyinPancake/tree-sitter-gh-actions-expressions](https://github.com/FlyinPancake/tree-sitter-gh-actions-expressions), a fork of [Hdoc1509/tree-sitter-gh-actions-expressions](https://github.com/Hdoc1509/tree-sitter-gh-actions-expressions) with parsing fixes, injected into values containing `${{ ... }}` and into `if:` conditions
 - Language Server: [actions/languageservices](https://github.com/actions/languageservices), installed from the [`@actions/languageserver`](https://www.npmjs.com/package/@actions/languageserver) NPM package
 
 > [!NOTE]

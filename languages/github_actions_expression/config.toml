@@ -1,0 +1,4 @@
+name = "GitHub Actions Expression"
+grammar = "gh_actions_expressions"
+# Only injected into workflow files (see `github_actions/injections.scm`).
+hidden = true
