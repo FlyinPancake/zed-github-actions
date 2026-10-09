@@ -11,11 +11,7 @@ GitHub Actions LSP support for Zed. As this repository uses code based on some o
 To develop this extension, see the [Developing Extensions](https://zed.dev/docs/extensions/developing-extensions) section of the Zed docs.
 
 - Tree-sitter: [zed-industries/tree-sitter-yaml](https://github.com/zed-industries/tree-sitter-yaml)
-- Language Server: [actions/languageservices](https://github.com/actions/languageservices)
-- Language Server (binary): [lttb/gh-actions-language-server](https://github.com/lttb/gh-actions-language-server)
-
-> [!NOTE]
-> The LSP provided by the official NPM package [`@actions/languageserver`](https://www.npmjs.com/package/@actions/languageserver) does not include a binary (see [issue #56](https://github.com/actions/languageservices/issues/56)), so this repository uses a third-party NPM package to install it via [`gh-actions-language-server`](https://www.npmjs.com/package/gh-actions-language-server).
+- Language Server: [actions/languageservices](https://github.com/actions/languageservices), installed from the [`@actions/languageserver`](https://www.npmjs.com/package/@actions/languageserver) NPM package
 
 ## Configuring
 ### Filetype settings
