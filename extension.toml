@@ -10,6 +10,10 @@ repository = "https://github.com/neoncitylights/zed-github-actions"
 repository = "https://github.com/zed-industries/tree-sitter-yaml"
 commit = "baff0b51c64ef6a1fb1f8390f3ad6015b83ec13a"
 
+[grammars.gh_actions_expressions]
+repository = "https://github.com/FlyinPancake/tree-sitter-gh-actions-expressions"
+commit = "912bbcfad3d0d3e98612c7c1f3c05e54434447fa"
+
 [language_servers.gh-actions-language-server]
 name = "GitHub Actions Language Server"
 languages = ["GitHub Actions"]
