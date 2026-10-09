@@ -13,6 +13,7 @@ To develop this extension, see the [Developing Extensions](https://zed.dev/docs/
 - Tree-sitter: [zed-industries/tree-sitter-yaml](https://github.com/zed-industries/tree-sitter-yaml)
 - Language Server: [actions/languageservices](https://github.com/actions/languageservices), installed from the [`@actions/languageserver`](https://www.npmjs.com/package/@actions/languageserver) NPM package
 
+
 ## Configuring
 ### Filetype settings
 This extension by default does not have any file associations built-in, as Zed doesn't support glob patterns at the extension-level to recognize a language within a specific directory. Instead, you can edit your Zed settings file (`settings.json`) with:
@@ -48,18 +49,58 @@ You can configure the LSP settings in Zed with:
 ```
 
 #### Default settings
-The default settings (`initialization_options`) set by the extension is shown below:
+The extension sets these `initialization_options` by default. Any key you set in your Zed settings replaces the default for that key.
 ```jsonc
 {
-	"sessionToken": ""
+	"sessionToken": "",
+	// Only sent if the worktree's `origin` remote is on github.com
+	"repos": [
+		{
+			"id": 0,
+			"owner": "<owner>",
+			"name": "<repo>",
+			"organizationOwned": false,
+			"workspaceUri": "file:///path/to/worktree/"
+		}
+	]
 }
 ```
 
-A session token is a GitHub PAT (Personal Access Token). This is not required, but when specified allows accessing more information from github.com.
-- [Classic PATs](https://github.com/settings/tokens/new) will need access to `repo` and `workflow` scopes.
+#### Session token
+A session token is a GitHub PAT (Personal Access Token). Without a token, the language server still validates workflows, but it can't fetch anything from github.com. Completion of action inputs (the keys under `with:`) needs a token and a `repos` entry for the worktree.
+
+The server documents that it needs the `repo` and `workflow` scopes, which also cover the secrets, variables and environments of private repositories. To complete inputs of public actions, read access to public repositories is enough.
+- [Classic PATs](https://github.com/settings/tokens/new): a token with no scopes can read public repositories. Add `repo` and `workflow` for everything else.
 - [Fine-grained PATs](https://github.com/settings/personal-access-tokens/new), which can either be given access to:
   - "Public repositories"
   - "All repositories"/"Only select repositories" with repository permissions to `Workflows`
+
+#### Repository settings
+The extension reads the `origin` remote from `.git/config` to fill in `repos`. It can't do that when `.git` is a file (git worktrees and submodules) or when `origin` isn't on github.com, and it assumes the repository isn't owned by an organization. In those cases, set `repos` yourself. Zed replaces the whole array, so include every field:
+
+```jsonc
+{
+	"lsp": {
+		"gh-actions-language-server": {
+			"initialization_options": {
+				"repos": [
+					{
+						"id": 0,
+						"owner": "my-org",
+						"name": "my-repo",
+						// Lets the server fetch organization secrets and variables
+						"organizationOwned": true,
+						// The worktree root as a `file://` URI, with a trailing slash
+						"workspaceUri": "file:///home/me/projects/my-repo/"
+					}
+				]
+			}
+		}
+	}
+}
+```
+
+`workspaceUri` must match the start of the document URIs Zed sends, so use the path Zed shows for the project, without resolving symlinks.
 
 ## License
 Licensed under Apache License, Version 2.0 ([`LICENSE-APACHE`](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>).
