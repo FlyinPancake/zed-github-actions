@@ -3,6 +3,8 @@ use zed_extension_api::*;
 
 const PACKAGE_NAME: &str = "@actions/languageserver";
 const BINARY_NAME: &str = "actions-languageserver";
+const PROXY_NAME: &str = "proxy.mjs";
+const PROXY_SOURCE: &str = include_str!("proxy.mjs");
 
 struct GitHubActionsExtension {
 	installed: HashSet<String>,
@@ -189,9 +191,18 @@ impl Extension for GitHubActionsExtension {
 	) -> Result<Command> {
 		self.install_package_if_needed(language_server_id, PACKAGE_NAME)?;
 
+		// Written on every start so it's updated together with the extension.
+		std::fs::write(PROXY_NAME, PROXY_SOURCE)
+			.map_err(|error| format!("failed to write {PROXY_NAME}: {error}"))?;
+		let proxy_path = std::env::current_dir()
+			.unwrap()
+			.join(PROXY_NAME)
+			.to_string_lossy()
+			.to_string();
+
 		Ok(Command {
 			command: node_binary_path()?,
-			args: vec![Self::binary_path(), "--stdio".to_string()],
+			args: vec![proxy_path, Self::binary_path(), "--stdio".to_string()],
 			env: Default::default(),
 		})
 	}
