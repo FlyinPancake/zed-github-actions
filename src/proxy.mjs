@@ -7,6 +7,8 @@
 //   line the server completes a placeholder key it inserted into its own copy of
 //   the document, so the edit covers text that doesn't exist. VS Code clips such
 //   edits; Zed drops the completion.
+// - It fixes links to `uses: $/...` workflows. The server joins the raw `$/...`
+//   reference onto the workspace URI, so the link points into a `$` directory.
 //
 // Usage: node proxy.mjs <server> [args...]
 import { spawn } from "node:child_process";
@@ -24,28 +26,32 @@ server.on("error", (error) => {
 
 // The server uses full document sync, so every change carries the whole text.
 const documents = new Map();
-// Id -> completion request, to clip the edits in the response.
+// `workspaceUri`s from the `repos` initialization option.
+let workspaces = [];
+// Id -> request, for the requests whose responses need fixing.
 const requests = new Map();
 
 // Zed -> server: forward each message whole, so responses written by the
 // proxy are never spliced into the middle of one.
 readMessages(process.stdin, (frame, body) => {
 	const { id, method, params } = JSON.parse(body);
-	if (method === "textDocument/didOpen") {
+	if (method === "initialize") {
+		workspaces = (params.initializationOptions?.repos ?? []).map((repo) => repo.workspaceUri);
+	} else if (method === "textDocument/didOpen") {
 		documents.set(params.textDocument.uri, params.textDocument.text);
 	} else if (method === "textDocument/didChange") {
 		const text = params.contentChanges.at(-1)?.text;
 		if (text !== undefined) documents.set(params.textDocument.uri, text);
 	} else if (method === "textDocument/didClose") {
 		documents.delete(params.textDocument.uri);
-	} else if (method === "textDocument/completion") {
+	} else if (method === "textDocument/completion" || method === "textDocument/documentLink") {
 		requests.set(id, { method, uri: params.textDocument.uri });
 	}
 	server.stdin.write(frame);
 });
 process.stdin.on("end", () => server.stdin.end());
 
-// Server -> Zed: answer `actions/readFile`, clip completion edits, forward
+// Server -> Zed: answer `actions/readFile`, fix the responses above, forward
 // everything else.
 readMessages(server.stdout, (frame, body) => {
 	const message = JSON.parse(body);
@@ -54,7 +60,11 @@ readMessages(server.stdout, (frame, body) => {
 		respond(message.id, message.params?.path);
 	} else if (request) {
 		requests.delete(message.id);
-		clipCompletionEdits(message.result, documents.get(request.uri));
+		if (request.method === "textDocument/completion") {
+			clipCompletionEdits(message.result, documents.get(request.uri));
+		} else {
+			fixDocumentLinks(message.result);
+		}
 		send(process.stdout, message);
 	} else {
 		process.stdout.write(frame);
@@ -70,6 +80,27 @@ function clipCompletionEdits(result, text) {
 			for (const position of range ? [range.start, range.end] : []) {
 				const length = lines[position.line]?.length;
 				if (length !== undefined) position.character = Math.min(position.character, length);
+			}
+		}
+	}
+}
+
+function fixDocumentLinks(links) {
+	const decode = (uri) => {
+		try {
+			return decodeURIComponent(uri);
+		} catch {
+			return uri;
+		}
+	};
+	const roots = workspaces.map(decode);
+	for (const link of links ?? []) {
+		// `$` is encoded as `%24`. Compare decoded URIs, because the server's
+		// vscode-uri may encode other characters differently from Zed.
+		for (let index = link.target?.indexOf("/%24/") ?? -1; index !== -1; index = link.target.indexOf("/%24/", index + 1)) {
+			if (roots.includes(decode(link.target.slice(0, index + 1)))) {
+				link.target = link.target.slice(0, index + 1) + link.target.slice(index + "/%24/".length);
+				break;
 			}
 		}
 	}
