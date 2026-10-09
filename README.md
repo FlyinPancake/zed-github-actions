@@ -52,6 +52,7 @@ You can configure the LSP settings in Zed with:
 The extension sets these `initialization_options` by default. Any key you set in your Zed settings replaces the default for that key.
 ```jsonc
 {
+	// See "Session token" below for where this comes from
 	"sessionToken": "",
 	// Only sent if the worktree's `origin` remote is on github.com
 	"repos": [
@@ -67,9 +68,16 @@ The extension sets these `initialization_options` by default. Any key you set in
 ```
 
 #### Session token
-A session token is a GitHub PAT (Personal Access Token). Without a token, the language server still validates workflows, but it can't fetch anything from github.com. Completion of action inputs (the keys under `with:`) needs a token and a `repos` entry for the worktree.
+The extension looks for a GitHub token in this order:
+1. `sessionToken` in your Zed settings
+2. `GITHUB_TOKEN`, then `GH_TOKEN`, in your shell environment
+3. `gh auth token`, if the [GitHub CLI](https://cli.github.com) is installed and logged in
 
-The server documents that it needs the `repo` and `workflow` scopes, which also cover the secrets, variables and environments of private repositories. To complete inputs of public actions, read access to public repositories is enough.
+If you already use the GitHub CLI, run `gh auth login` once and restart the language server. Nothing else needs to be configured. The token belongs to the CLI's active account for github.com and has the CLI's scopes.
+
+Without a token, the language server still validates workflows, but it can't fetch anything from github.com. Completion of action inputs (the keys under `with:`) needs a token and a `repos` entry for the worktree.
+
+The server documents that it needs the `repo` and `workflow` scopes, which also cover the secrets, variables and environments of private repositories. To complete inputs of public actions, read access to public repositories is enough. If you don't use the GitHub CLI, create a PAT (Personal Access Token):
 - [Classic PATs](https://github.com/settings/tokens/new): a token with no scopes can read public repositories. Add `repo` and `workflow` for everything else.
 - [Fine-grained PATs](https://github.com/settings/personal-access-tokens/new), which can either be given access to:
   - "Public repositories"
