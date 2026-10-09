@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 use zed_extension_api::*;
 
-const PACKAGE_NAME: &str = "gh-actions-language-server";
-const BINARY_NAME: &str = PACKAGE_NAME;
+const PACKAGE_NAME: &str = "@actions/languageserver";
+const BINARY_NAME: &str = "actions-languageserver";
 
 struct GitHubActionsExtension {
 	installed: HashSet<String>,
