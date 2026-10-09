@@ -54,6 +54,93 @@ impl GitHubActionsExtension {
 		self.installed.insert(package_name.into());
 		Ok(())
 	}
+
+	/// Builds the `RepositoryContext` the server needs to look up action inputs,
+	/// runner labels, etc. Returns `None` if the origin isn't a GitHub repository.
+	fn repo_context(worktree: &Worktree) -> Option<serde_json::Value> {
+		// Fails if `.git` is a file (git worktree or submodule), which is fine:
+		// users can set `repos` themselves in that case.
+		let git_config = worktree.read_text_file(".git/config").ok()?;
+		let (owner, name) = parse_github_remote(&origin_url(&git_config)?)?;
+
+		Some(serde_json::json!({
+			"id": 0,
+			"owner": owner,
+			"name": name,
+			"organizationOwned": false,
+			"workspaceUri": file_uri(&worktree.root_path()),
+		}))
+	}
+}
+
+/// Returns the URL of the `origin` remote from the contents of a `.git/config` file.
+fn origin_url(git_config: &str) -> Option<String> {
+	let mut in_origin = false;
+	for line in git_config.lines().map(str::trim) {
+		if line.starts_with('[') {
+			in_origin = line == r#"[remote "origin"]"#;
+		} else if in_origin
+			&& let Some((key, value)) = line.split_once('=')
+			&& key.trim() == "url"
+		{
+			return Some(value.trim().to_string());
+		}
+	}
+	None
+}
+
+/// Parses `owner` and `name` from a GitHub remote URL in any of these forms:
+/// `https://github.com/o/n`, `git@github.com:o/n`, `ssh://git@github.com/o/n`,
+/// each with an optional `.git` suffix.
+fn parse_github_remote(url: &str) -> Option<(String, String)> {
+	let path = [
+		"https://github.com/",
+		"ssh://git@github.com/",
+		"git@github.com:",
+	]
+	.iter()
+	.find_map(|prefix| url.strip_prefix(prefix))?;
+	let path = path.trim_end_matches('/');
+	let (owner, name) = path.strip_suffix(".git").unwrap_or(path).split_once('/')?;
+	if owner.is_empty() || name.is_empty() || name.contains('/') {
+		return None;
+	}
+	Some((owner.to_string(), name.to_string()))
+}
+
+/// Converts a directory path to a `file://` URI with a trailing slash, encoded the
+/// same way Zed encodes document URIs, so the server's `startsWith` check matches.
+fn file_uri(path: &str) -> String {
+	let mut uri = String::from("file://");
+	// Windows paths (`C:\foo`) become `file:///C:/foo`.
+	let path = if path.starts_with('/') {
+		path.to_string()
+	} else {
+		uri.push('/');
+		path.replace('\\', "/")
+	};
+	for byte in path.trim_end_matches('/').bytes() {
+		match byte {
+			b'/' => uri.push('/'),
+			b'\0'..=b' '
+			| b'"'
+			| b'#'
+			| b'%'
+			| b'<'
+			| b'>'
+			| b'?'
+			| b'['
+			| b'\\'
+			| b']'
+			| b'`'
+			| b'{'
+			| b'}'
+			| 0x7f.. => uri.push_str(&format!("%{byte:02X}")),
+			_ => uri.push(byte as char),
+		}
+	}
+	uri.push('/');
+	uri
 }
 
 impl Extension for GitHubActionsExtension {
@@ -80,12 +167,57 @@ impl Extension for GitHubActionsExtension {
 	fn language_server_initialization_options(
 		&mut self,
 		_language_server_id: &LanguageServerId,
-		_worktree: &Worktree,
+		worktree: &Worktree,
 	) -> Result<Option<serde_json::Value>> {
-		Ok(Some(serde_json::json!({
+		// Zed merges `lsp.gh-actions-language-server.initialization_options` from the
+		// user's settings over these, so any key set there takes precedence.
+		let mut options = serde_json::json!({
 			"sessionToken": ""
-		})))
+		});
+		if let Some(repo) = Self::repo_context(worktree) {
+			options["repos"] = serde_json::json!([repo]);
+		}
+		Ok(Some(options))
 	}
 }
 
 register_extension!(GitHubActionsExtension);
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn parses_origin_url() {
+		let config = "[core]\n\tbare = false\n[remote \"upstream\"]\n\turl = https://github.com/a/b\n[remote \"origin\"]\n\turl = git@github.com:o/n.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n";
+		assert_eq!(
+			origin_url(config).as_deref(),
+			Some("git@github.com:o/n.git")
+		);
+		assert_eq!(origin_url("[core]\n\tbare = false\n"), None);
+	}
+
+	#[test]
+	fn parses_github_remotes() {
+		let expected = Some(("o".to_string(), "n".to_string()));
+		for url in [
+			"https://github.com/o/n",
+			"https://github.com/o/n.git",
+			"git@github.com:o/n",
+			"git@github.com:o/n.git",
+			"ssh://git@github.com/o/n",
+			"ssh://git@github.com/o/n.git",
+		] {
+			assert_eq!(parse_github_remote(url), expected, "{url}");
+		}
+		assert_eq!(parse_github_remote("https://gitlab.com/o/n.git"), None);
+		assert_eq!(parse_github_remote("https://github.com/o"), None);
+	}
+
+	#[test]
+	fn encodes_file_uri() {
+		assert_eq!(file_uri("/var/home/me/repo"), "file:///var/home/me/repo/");
+		assert_eq!(file_uri("/a b/[x]#ű"), "file:///a%20b/%5Bx%5D%23%C5%B1/");
+		assert_eq!(file_uri(r"C:\Users\me"), "file:///C:/Users/me/");
+	}
+}
