@@ -18,3 +18,8 @@ languages = ["GitHub Actions"]
 kind = "process:exec"
 command = "gh"
 args = ["auth", "token"]
+
+[[capabilities]]
+kind = "process:exec"
+command = "git"
+args = ["-C", "*", "remote", "get-url", "origin"]
