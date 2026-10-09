@@ -86,7 +86,7 @@ The server documents that it needs the `repo` and `workflow` scopes, which also 
   - "All repositories"/"Only select repositories" with repository permissions to `Workflows`
 
 #### Repository settings
-The extension reads the `origin` remote from `.git/config` to fill in `repos`. It can't do that when `.git` is a file (git worktrees and submodules) or when `origin` isn't on github.com, and it assumes the repository isn't owned by an organization. In those cases, set `repos` yourself. Zed replaces the whole array, so include every field:
+The extension runs `git remote get-url origin` in the worktree root to fill in `repos`. It can't do that when git isn't installed or when `origin` isn't on github.com, and it assumes the repository isn't owned by an organization. In those cases, set `repos` yourself. Zed replaces the whole array, so include every field:
 
 ```jsonc
 {

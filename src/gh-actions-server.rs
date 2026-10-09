@@ -92,35 +92,28 @@ impl GitHubActionsExtension {
 	/// Builds the `RepositoryContext` the server needs to look up action inputs,
 	/// runner labels, etc. Returns `None` if the origin isn't a GitHub repository.
 	fn repo_context(worktree: &Worktree) -> Option<serde_json::Value> {
-		// Fails if `.git` is a file (git worktree or submodule), which is fine:
-		// users can set `repos` themselves in that case.
-		let git_config = worktree.read_text_file(".git/config").ok()?;
-		let (owner, name) = parse_github_remote(&origin_url(&git_config)?)?;
+		// Ask git instead of reading `.git/config`: Zed's `file_scan_exclusions` hide
+		// `.git` from `read_text_file` by default, and `.git` is a file in git
+		// worktrees and submodules.
+		let root_path = worktree.root_path();
+		let output = process::Command::new("git")
+			.args(["-C", &root_path, "remote", "get-url", "origin"])
+			.envs(worktree.shell_env())
+			.output()
+			.ok()?;
+		if output.status != Some(0) {
+			return None;
+		}
+		let (owner, name) = parse_github_remote(String::from_utf8(output.stdout).ok()?.trim())?;
 
 		Some(serde_json::json!({
 			"id": 0,
 			"owner": owner,
 			"name": name,
 			"organizationOwned": false,
-			"workspaceUri": file_uri(&worktree.root_path()),
+			"workspaceUri": file_uri(&root_path),
 		}))
 	}
-}
-
-/// Returns the URL of the `origin` remote from the contents of a `.git/config` file.
-fn origin_url(git_config: &str) -> Option<String> {
-	let mut in_origin = false;
-	for line in git_config.lines().map(str::trim) {
-		if line.starts_with('[') {
-			in_origin = line == r#"[remote "origin"]"#;
-		} else if in_origin
-			&& let Some((key, value)) = line.split_once('=')
-			&& key.trim() == "url"
-		{
-			return Some(value.trim().to_string());
-		}
-	}
-	None
 }
 
 /// Parses `owner` and `name` from a GitHub remote URL in any of these forms:
@@ -229,16 +222,6 @@ register_extension!(GitHubActionsExtension);
 #[cfg(test)]
 mod tests {
 	use super::*;
-
-	#[test]
-	fn parses_origin_url() {
-		let config = "[core]\n\tbare = false\n[remote \"upstream\"]\n\turl = https://github.com/a/b\n[remote \"origin\"]\n\turl = git@github.com:o/n.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n";
-		assert_eq!(
-			origin_url(config).as_deref(),
-			Some("git@github.com:o/n.git")
-		);
-		assert_eq!(origin_url("[core]\n\tbare = false\n"), None);
-	}
 
 	#[test]
 	fn parses_github_remotes() {
