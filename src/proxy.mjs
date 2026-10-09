@@ -1,6 +1,12 @@
-// Sits between Zed and the language server and answers the server's custom
-// `actions/readFile` request, which Zed doesn't implement. The server uses it
-// to read local reusable workflows (`uses: ./...` and `uses: $/...`).
+// Sits between Zed and the language server and works around differences
+// between Zed and VS Code, the editor the server is written for:
+// - It answers the server's custom `actions/readFile` request, which Zed doesn't
+//   implement. The server uses it to read local reusable workflows
+//   (`uses: ./...` and `uses: $/...`).
+// - It clips completion edits that reach past the end of the line. On a blank
+//   line the server completes a placeholder key it inserted into its own copy of
+//   the document, so the edit covers text that doesn't exist. VS Code clips such
+//   edits; Zed drops the completion.
 //
 // Usage: node proxy.mjs <server> [args...]
 import { spawn } from "node:child_process";
@@ -16,20 +22,58 @@ server.on("error", (error) => {
 	process.exit(1);
 });
 
+// The server uses full document sync, so every change carries the whole text.
+const documents = new Map();
+// Id -> completion request, to clip the edits in the response.
+const requests = new Map();
+
 // Zed -> server: forward each message whole, so responses written by the
 // proxy are never spliced into the middle of one.
-readMessages(process.stdin, (frame) => server.stdin.write(frame));
+readMessages(process.stdin, (frame, body) => {
+	const { id, method, params } = JSON.parse(body);
+	if (method === "textDocument/didOpen") {
+		documents.set(params.textDocument.uri, params.textDocument.text);
+	} else if (method === "textDocument/didChange") {
+		const text = params.contentChanges.at(-1)?.text;
+		if (text !== undefined) documents.set(params.textDocument.uri, text);
+	} else if (method === "textDocument/didClose") {
+		documents.delete(params.textDocument.uri);
+	} else if (method === "textDocument/completion") {
+		requests.set(id, { method, uri: params.textDocument.uri });
+	}
+	server.stdin.write(frame);
+});
 process.stdin.on("end", () => server.stdin.end());
 
-// Server -> Zed: answer `actions/readFile`, forward everything else.
+// Server -> Zed: answer `actions/readFile`, clip completion edits, forward
+// everything else.
 readMessages(server.stdout, (frame, body) => {
 	const message = JSON.parse(body);
+	const request = message.method === undefined && requests.get(message.id);
 	if (message.method === "actions/readFile" && message.id !== undefined) {
 		respond(message.id, message.params?.path);
+	} else if (request) {
+		requests.delete(message.id);
+		clipCompletionEdits(message.result, documents.get(request.uri));
+		send(process.stdout, message);
 	} else {
 		process.stdout.write(frame);
 	}
 });
+
+function clipCompletionEdits(result, text) {
+	const lines = text?.split(/\r?\n/);
+	const items = Array.isArray(result) ? result : result?.items;
+	if (!lines || !items) return;
+	for (const { textEdit } of items) {
+		for (const range of [textEdit?.range, textEdit?.insert, textEdit?.replace]) {
+			for (const position of range ? [range.start, range.end] : []) {
+				const length = lines[position.line]?.length;
+				if (length !== undefined) position.character = Math.min(position.character, length);
+			}
+		}
+	}
+}
 
 async function respond(id, uri) {
 	let result = null;
@@ -42,8 +86,12 @@ async function respond(id, uri) {
 	} catch {
 		// The server reports a missing file (`null`) as "Unable to find reusable workflow".
 	}
-	const body = JSON.stringify({ jsonrpc: "2.0", id, result });
-	server.stdin.write(`Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+	send(server.stdin, { jsonrpc: "2.0", id, result });
+}
+
+function send(stream, message) {
+	const body = JSON.stringify(message);
+	stream.write(`Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
 }
 
 /** Splits an LSP byte stream into messages and calls `onMessage(frame, body)` for each. */

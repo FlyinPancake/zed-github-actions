@@ -14,7 +14,7 @@ To develop this extension, see the [Developing Extensions](https://zed.dev/docs/
 - Language Server: [actions/languageservices](https://github.com/actions/languageservices), installed from the [`@actions/languageserver`](https://www.npmjs.com/package/@actions/languageserver) NPM package
 
 > [!NOTE]
-> The language server reads local reusable workflows (`uses: ./...` and `uses: $/...`) by sending the editor a custom `actions/readFile` request, which Zed doesn't support. The extension starts the server through a small Node script ([`src/proxy.mjs`](src/proxy.mjs)) that answers this request from disk and passes every other message through unchanged.
+> The extension starts the language server through a small Node script ([`src/proxy.mjs`](src/proxy.mjs)) that works around differences between Zed and VS Code, the editor the server is written for. The server reads local reusable workflows (`uses: ./...` and `uses: $/...`) by sending the editor a custom `actions/readFile` request, which Zed doesn't support, so the script answers it from disk. On a blank line, the server returns completion edits that reach past the end of the line, which Zed rejects, so the script clips them to the line. Every other message passes through unchanged.
 
 ## Configuring
 ### Filetype settings
