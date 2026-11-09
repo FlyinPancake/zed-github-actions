@@ -200,3 +200,26 @@
   (#not-match? @_job "defaults:[ \\t]*(?:\\n[ \\t]+run:[ \\t]*\\n(?:[ \\t]+working-directory:[^\\n]*\\n)?[ \\t]+|\\{[^\\n]*)shell:")
   (#not-match? @_job "(?i)runs-on:[ \\t]*(?:[^\\n]*windows|\\n(?:[ \\t]+-[^\\n]*\\n)*?[ \\t]+-[^\\n]*windows)")
   (#set! injection.language "Shell Script"))
+
+; JavaScript in `actions/github-script`'s `script:` input. Like the shell
+; patterns, this starts at the step and checks `uses:` with a regex instead of a
+; sibling pattern, to keep the number of partial matches down.
+((block_sequence_item
+  (block_node
+    (block_mapping
+      (block_mapping_pair
+        key: (flow_node) @_with
+        value: (block_node
+          (block_mapping
+            (block_mapping_pair
+              key: (flow_node) @_script
+              value: [
+                (flow_node
+                  (plain_scalar) @injection.content)
+                (block_node
+                  (block_scalar) @injection.content)
+              ])))) ) @_step))
+  (#eq? @_with "with")
+  (#eq? @_script "script")
+  (#match? @_step "(?m)^[ \\t]*uses:[ \\t]*['\"]?actions/github-script@")
+  (#set! injection.language "JavaScript"))

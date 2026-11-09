@@ -35,6 +35,8 @@ GitHub Actions support for Zed, for workflow files in `.github/workflows/`.
   job's `defaults.run.shell`, then the runner's default, which is PowerShell on Windows runners and bash elsewhere. It
   doesn't read the workflow's `defaults.run.shell`, and it assumes runners from a matrix aren't Windows. PowerShell
   highlighting needs the [PowerShell extension](https://zed.dev/extensions/powershell).
+- Syntax highlighting of the `script:` input of [`actions/github-script`](https://github.com/actions/github-script)
+  steps as JavaScript.
 
 ## Usage
 
